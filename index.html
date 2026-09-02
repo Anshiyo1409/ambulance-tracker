@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🚑 Ambulance Live GPS Tracking & Traffic Alert System</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <!-- TOP HEADER -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="header-branding">
+                <span class="header-icon">🚑</span>
+                <div>
+                    <h1>Ambulance Alert System</h1>
+                    <p class="subtitle-text">Real-Time Mobile GPS Tracking & Smart Traffic Clearance</p>
+                </div>
+            </div>
+
+            <!-- LIVE NETWORK CONNECTIVITY STRIP -->
+            <div class="sync-status-bar" id="syncStatusBar">
+                <div class="sync-pill" id="syncStatusPill">
+                    <span class="sync-dot yellow"></span>
+                    <span id="syncStatusText">Connecting Cloud Relay...</span>
+                </div>
+                <div class="room-pill" id="roomPill" title="Click to change Room Code">
+                    <span>🔑 Room: <strong id="currentRoomDisplay">AMB-SYNC</strong></span>
+                </div>
+                <div class="telemetry-stat" id="pingDisplay" title="Network Ping Latency">
+                    <span>⚡ <span id="pingMs">--</span> ms</span>
+                </div>
+                <div class="telemetry-stat" id="packetDisplay" title="Total Telemetry Packets Transmitted">
+                    <span>📦 <span id="packetCount">0</span> pkts</span>
+                </div>
+                <button id="openPairingModalBtn" class="btn-sm btn-accent" title="Connect Mobile Phone via QR Code">
+                    📱 Pair Mobile (QR)
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+
+        <!-- MODE SELECTION -->
+        <section class="card mode-selection-card">
+            <div class="card-header">
+                <h2>🎯 Step 1: Select Device Mode</h2>
+                <span class="step-tag">Choose role for this screen</span>
+            </div>
+
+            <div class="mode-buttons-grid">
+                <button id="ambulanceBtn" class="mode-btn ambulance-mode-btn">
+                    <div class="mode-btn-icon">📱</div>
+                    <div class="mode-btn-content">
+                        <strong>Ambulance Transmitter</strong>
+                        <span>Open on Mobile Phone to send live GPS</span>
+                    </div>
+                </button>
+
+                <button id="trafficBtn" class="mode-btn traffic-mode-btn">
+                    <div class="mode-btn-icon">🚦</div>
+                    <div class="mode-btn-content">
+                        <strong>Traffic Control Center</strong>
+                        <span>Open on Laptop to track vehicles & routes</span>
+                    </div>
+                </button>
+            </div>
+
+            <div class="current-mode-indicator" id="currentModeBanner">
+                <span id="currentMode">Please select a mode above to begin tracking.</span>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- AMBULANCE MOBILE TRANSMITTER PANEL             -->
+        <!-- ============================================== -->
+        <section id="ambulancePanel" class="card transmitter-card hidden">
+            <div class="card-header border-bottom">
+                <div class="panel-title-wrap">
+                    <span class="panel-icon">📡</span>
+                    <div>
+                        <h2>Mobile GPS Transmitter</h2>
+                        <p class="subtitle-text">Streaming high-frequency GPS telemetry to Traffic Control</p>
+                    </div>
+                </div>
+                <span class="badge badge-pulse" id="transmitterStatusBadge">STANDBY</span>
+            </div>
+
+            <!-- SECURITY / INSECURE ORIGIN WARNING (Conditional) -->
+            <div id="insecureOriginAlert" class="alert-box warning-alert hidden">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-body">
+                    <strong>Mobile GPS Permission Note:</strong>
+                    <p>Mobile browsers (Chrome/Safari) require <strong>HTTPS</strong> or <strong>localhost</strong> to access GPS. If using a local IP (<code>http://192.168.x.x</code>), click below for immediate options:</p>
+                    <div class="alert-actions">
+                        <button id="alertSimulateBtn" class="btn-xs btn-primary">🎮 Start Realistic Test Simulation</button>
+                        <button id="alertHelpBtn" class="btn-xs btn-outline">📖 How to allow on Mobile Chrome</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VEHICLE IDENTIFICATION -->
+            <div class="form-row-grid">
+                <div class="form-group">
+                    <label for="vehicleSelect"><strong>Select Mobile / Vehicle ID:</strong></label>
+                    <select id="vehicleSelect" class="form-select">
+                        <option value="AMB001">🔴 Mobile 1 - Ambulance AMB001 (Priority 1)</option>
+                        <option value="AMB002">🔵 Mobile 2 - Ambulance AMB002 (Emergency)</option>
+                        <option value="AMB003">🟢 Mobile 3 - Ambulance AMB003 (Support)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="deviceDisplayNameInput"><strong>Driver / Phone Display Name:</strong></label>
+                    <input type="text" id="deviceDisplayNameInput" placeholder="e.g. Driver John, Unit 1, My Phone" class="form-input">
+                </div>
+            </div>
+
+            <!-- CUSTOM ID REGISTRATION -->
+            <div class="custom-id-row">
+                <input type="text" id="customVehicleInput" placeholder="Or enter Custom ID (e.g. RESCUE-99)" class="form-input">
+                <button id="addCustomVehicleBtn" class="btn-secondary">➕ Register ID</button>
+            </div>
+
+            <!-- GPS CONTROL ACTIONS -->
+            <div class="transmitter-actions">
+                <button id="startTrackingBtn" class="btn-action btn-success">
+                    ▶️ Start Live GPS Tracking
+                </button>
+                <button id="stopTrackingBtn" class="btn-action btn-danger" disabled>
+                    ⏹️ Stop Tracking
+                </button>
+                <button id="sendTestPingBtn" class="btn-action btn-secondary" title="Sends an instant test packet to laptop">
+                    ⚡ Send Test Ping
+                </button>
+                <button id="simulateBtn" class="btn-action btn-accent">
+                    🚗 Simulate Movement
+                </button>
+            </div>
+
+            <!-- TELEMETRY METRICS GRID -->
+            <div class="telemetry-grid">
+                <div class="telemetry-card">
+                    <span class="t-label">Vehicle ID</span>
+                    <span class="t-value" id="activeVehicleDisplay">AMB001</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="t-label">Latitude</span>
+                    <span class="t-value" id="latitude">--</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="t-label">Longitude</span>
+                    <span class="t-value" id="longitude">--</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="t-label">Accuracy</span>
+                    <span class="t-value" id="accuracy">--</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="t-label">Speed</span>
+                    <span class="t-value" id="speed">--</span>
+                </div>
+                <div class="telemetry-card">
+                    <span class="t-label">Last Transmission</span>
+                    <span class="t-value" id="lastUpdate">--</span>
+                </div>
+            </div>
+
+            <div id="status" class="status-banner">
+                Waiting to begin GPS broadcast...
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TRAFFIC CONTROL CENTER (RECEIVER / LAPTOP)    -->
+        <!-- ============================================== -->
+        <section id="trafficPanel" class="card receiver-card hidden">
+            <div class="card-header border-bottom">
+                <div class="panel-title-wrap">
+                    <span class="panel-icon">🚦</span>
+                    <div>
+                        <h2>Traffic Control Center</h2>
+                        <p class="subtitle-text">Multi-Vehicle Tracking & OSRM Shortest Path Routing</p>
+                    </div>
+                </div>
+                <button id="showPairingInTrafficBtn" class="btn-sm btn-accent">
+                    📱 Pair Mobile Phone (QR Code)
+                </button>
+            </div>
+
+            <!-- TRAFFIC JUNCTION SELECTOR -->
+            <div class="junction-box">
+                <label for="junctionSelect"><strong>🎯 Target Traffic Signal / Intersection:</strong></label>
+                <div class="junction-controls">
+                    <select id="junctionSelect" class="form-select">
+                        <option value="13.0827,80.2707">🚦 Junction 1: Central Railway Station (Chennai)</option>
+                        <option value="13.0521,80.2504">🚦 Junction 2: Gemini Flyover / Anna Salai</option>
+                        <option value="13.0067,80.2020">🚦 Junction 3: Guindy Intersection</option>
+                        <option value="custom">📍 Custom: Click anywhere on map</option>
+                    </select>
+                    <button id="pickJunctionOnMapBtn" class="btn-secondary">
+                        🎯 Pick on Map
+                    </button>
+                </div>
+            </div>
+
+            <!-- ROUTE TELEMETRY BAR -->
+            <div id="routeTelemetryBox" class="route-telemetry-box">
+                <div class="route-metric">
+                    <span class="metric-label">📏 Shortest Road Distance</span>
+                    <span id="routeDistance" class="metric-value">-- km</span>
+                </div>
+                <div class="route-metric">
+                    <span class="metric-label">⏱️ Estimated Arrival (ETA)</span>
+                    <span id="routeETA" class="metric-value">-- mins</span>
+                </div>
+                <div class="route-metric">
+                    <span class="metric-label">🚨 Clearance Status</span>
+                    <span id="routeAlertBadge" class="status-badge normal">Waiting for Mobile Signal...</span>
+                </div>
+            </div>
+
+            <div id="trafficStatus" class="status-banner">
+                Waiting for active mobile signals in room...
+            </div>
+
+            <!-- LIVE DETECTED VEHICLES GRID -->
+            <div class="section-sub-header">
+                <h3>🚗 Active Mobile Units in Room</h3>
+                <span class="units-count" id="activeUnitsCount">0 Connected</span>
+            </div>
+            <div id="trafficVehiclesList" class="vehicles-grid">
+                <div class="empty-state-card">
+                    <div class="empty-icon">📱</div>
+                    <h4>No active mobile GPS signals received yet</h4>
+                    <p>Open this page on your mobile phone in <strong>Ambulance Mode</strong> with Room <code id="emptyRoomCode">AMB-SYNC</code>, or click <strong>Pair Mobile (QR)</strong> above.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- LIVE LEAFLET MAP SECTION                       -->
+        <!-- ============================================== -->
+        <section class="card map-card">
+            <div class="map-card-header">
+                <div class="map-title-wrap">
+                    <h2>📍 Live Telemetry Map</h2>
+                    <span class="map-sub">Real-time GPS coordinates & road paths</span>
+                </div>
+                <div class="map-actions">
+                    <button id="toggleTrafficSignalsBtn" class="btn-xs btn-outline">🚦 Toggle Signals</button>
+                    <button id="recenterMapBtn" class="btn-xs btn-primary">🎯 Recenter & Fit</button>
+                </div>
+            </div>
+
+            <div id="map"></div>
+        </section>
+
+    </main>
+
+    <!-- ============================================== -->
+    <!-- MOBILE QR PAIRING MODAL                        -->
+    <!-- ============================================== -->
+    <div id="pairingModal" class="modal-overlay hidden">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>📱 Pair Mobile Device</h3>
+                <button id="closePairingModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">Scan this QR Code with your mobile phone camera to start transmitting live GPS immediately to this laptop:</p>
+                
+                <div class="qr-container">
+                    <div id="qrcode"></div>
+                </div>
+
+                <div class="pairing-url-box">
+                    <label><strong>Or open this link on your phone:</strong></label>
+                    <div class="copy-input-group">
+                        <input type="text" id="pairingUrlInput" readonly class="form-input">
+                        <button id="copyPairingUrlBtn" class="btn-secondary">📋 Copy</button>
+                    </div>
+                </div>
+
+                <div class="room-edit-group">
+                    <label><strong>Sync Room Code:</strong></label>
+                    <div class="copy-input-group">
+                        <input type="text" id="customRoomInput" placeholder="Room Code" class="form-input" style="text-transform: uppercase;">
+                        <button id="applyCustomRoomBtn" class="btn-primary">Apply Room</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- GPS PERMISSION GUIDE MODAL                     -->
+    <!-- ============================================== -->
+    <div id="gpsHelpModal" class="modal-overlay hidden">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>📍 Mobile GPS Troubleshooting</h3>
+                <button id="closeGpsHelpModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>Why is GPS blocked on my phone?</h4>
+                <p>Mobile browsers (Chrome / Safari) strictly require <strong>HTTPS</strong> or <strong>localhost</strong> for GPS. If you are opening a local IP like <code>http://192.168.x.x:3000</code>, follow these options:</p>
+                
+                <div class="troubleshoot-step">
+                    <strong>Option 1 (Fastest): Use Simulation Mode</strong>
+                    <p>Tap "Simulate Movement" on your phone. It sends realistic live movement coordinates that update the laptop in real time without needing GPS permissions!</p>
+                </div>
+
+                <div class="troubleshoot-step">
+                    <strong>Option 2: Allow Insecure Origin in Mobile Chrome</strong>
+                    <ol>
+                        <li>On mobile Chrome, navigate to <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+                        <li>Add your laptop's URL (e.g., <code>http://192.168.1.15:3000</code>).</li>
+                        <li>Select <strong>Enabled</strong> and tap <strong>Relaunch</strong>.</li>
+                    </ol>
+                </div>
+
+                <div class="troubleshoot-step">
+                    <strong>Option 3: Use Free Cloud Relay / HTTPS</strong>
+                    <p>Deploy to GitHub Pages, Netlify, or Vercel for instant free HTTPS on your phone!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- DEPENDENCY SCRIPTS                             -->
+    <!-- ============================================== -->
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- MQTT.js for Zero-Config WSS Cloud Relay -->
+    <script src="https://unpkg.com/mqtt@5.5.3/dist/mqtt.min.js"></script>
+
+    <!-- QRCode.js for Mobile Pairing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- PeerJS for WebRTC P2P Sync -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <!-- Main Application Logic -->
+    <script src="app.js"></script>
+
+</body>
+
+</html>

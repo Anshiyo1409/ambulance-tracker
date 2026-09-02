@@ -1,0 +1,25 @@
+{
+  "name": "ambulance-tracker",
+  "version": "1.0.0",
+  "description": "Real-time Ambulance GPS Alert & Traffic Control System with Zero-Config Cloud & LAN Sync",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "gps",
+    "tracker",
+    "ambulance",
+    "leaflet",
+    "osrm",
+    "mqtt",
+    "websockets"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  }
+}
