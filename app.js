@@ -1561,21 +1561,85 @@
 
     async function updateEsp32Signal(distanceM, etaSeconds) {
         if (!esp32BaseUrl) return;
-        if (!Number.isFinite(distanceM) || !Number.isFinite(etaSeconds)) return;
-        if (distanceM > APPROACH_DISTANCE_M) return;
+        if (!Number.isFinite(distanceM)) return;
 
-        if (Date.now() - lastEsp32Update < ESP32_UPDATE_INTERVAL) return;
+        const base = esp32BaseUrl.replace(/\/+$/, "");
+
+        // ==========================================================
+        // AMBULANCE OUTSIDE 750 METERS
+        // Tell ESP32 to reset the traffic signal
+        // ==========================================================
+        if (distanceM > APPROACH_DISTANCE_M) {
+
+            const resetUrl = `${base}/traffic/update?distance=9999&eta=0`;
+
+            try {
+                await fetch(resetUrl, {
+                    method: "GET",
+                    mode: "cors"
+                });
+
+                console.log(
+                    "🚦 Ambulance outside 750m - ESP32 reset"
+                );
+
+                // Allow the next approach update immediately
+                lastEsp32Update = 0;
+
+            } catch (err) {
+                console.warn(
+                    "ESP32 reset failed:",
+                    err
+                );
+            }
+
+            return;
+        }
+
+        // ==========================================================
+        // AMBULANCE INSIDE 750 METERS
+        // ==========================================================
+
+        if (!Number.isFinite(etaSeconds)) return;
+
+        if (
+            Date.now() - lastEsp32Update <
+            ESP32_UPDATE_INTERVAL
+        ) {
+            return;
+        }
 
         lastEsp32Update = Date.now();
 
-        const base = esp32BaseUrl.replace(/\/+$/, "");
-        const url = `${base}/traffic/update?distance=${encodeURIComponent(Math.round(distanceM))}&eta=${encodeURIComponent(Math.round(etaSeconds))}`;
+        const distance = Math.round(distanceM);
+        const eta = Math.round(etaSeconds);
+
+        const url =
+            `${base}/traffic/update` +
+            `?distance=${encodeURIComponent(distance)}` +
+            `&eta=${encodeURIComponent(eta)}`;
 
         try {
-            await fetch(url, { method: "GET", mode: "cors" });
-            console.log("🚦 ESP32 updated:", Math.round(distanceM), "m /", Math.round(etaSeconds), "s");
+
+            await fetch(url, {
+                method: "GET",
+                mode: "cors"
+            });
+
+            console.log(
+                "🚦 ESP32 updated:",
+                distance,
+                "m /",
+                eta,
+                "s"
+            );
+
         } catch (err) {
-            console.warn("ESP32 update failed:", err);
+
+            console.warn(
+                "ESP32 update failed:",
+                err
+            );
         }
     }
 
