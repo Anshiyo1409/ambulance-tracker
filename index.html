@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css?v=2.0">
+    <link rel="stylesheet" href="styles.css?v=3.0">
 </head>
 
 <body>
@@ -218,6 +218,20 @@
                 </div>
             </div>
 
+            <!-- PHYSICAL ESP32 TRAFFIC SIGNAL CONTROLLER -->
+            <div class="junction-box" style="margin-top:12px;">
+                <label for="esp32IpInput"><strong>🚦 ESP32 Traffic Signal Controller:</strong></label>
+                <div class="junction-controls">
+                    <input id="esp32IpInput" class="form-input" type="text"
+                           placeholder="http://192.168.1.100"
+                           style="flex:1;">
+                    <button id="connectEsp32Btn" class="btn-secondary">🔌 Connect ESP32</button>
+                </div>
+                <small id="esp32Status" style="display:block;margin-top:8px;">
+                    Enter the ESP32 IP address shown in Arduino Serial Monitor.
+                </small>
+            </div>
+
             <!-- ROUTE TELEMETRY BAR -->
             <div id="routeTelemetryBox" class="route-telemetry-box">
                 <div class="route-metric">
@@ -358,7 +372,7 @@
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <!-- Main Application Logic -->
-    <script src="app.js?v=2.0"></script>
+    <script src="app.js?v=3.0"></script>
 
 </body>
 

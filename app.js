@@ -19,8 +19,15 @@
     // Maps & Tracking Data
     let markersMap = {};
     let activeVehiclesData = {};
-    let vehicleTrailsMap = {};
-    let vehicleHistoryMap = {};
+
+    // GPS quality / movement filtering. GPS can drift even when the phone is stationary.
+    const gpsStateMap = {};
+    const MIN_GPS_ACCURACY_M = 25;
+    const MIN_MOVEMENT_M = 8;
+    const STATIONARY_SPEED_KMH = 4;
+    const MAX_REASONABLE_JUMP_M = 120;
+    const MARKER_ANIMATION_MS = 900;
+
     let simulatedVehicleActive = false;
     let simulationTimer = null;
     let simLat = 13.0600;
@@ -33,6 +40,13 @@
     let pickJunctionMode = false;
     let autoCenterEnabled = true;
     let lastRoutingTime = 0;
+
+    // Physical traffic-signal controller (ESP32)
+    let esp32BaseUrl = "";
+    let lastEsp32Update = 0;
+    const ESP32_UPDATE_INTERVAL = 3000;
+    const APPROACH_DISTANCE_M = 750;
+
 
     // Network & Sync Transports
     let totalPacketsTransmitted = 0;
@@ -332,6 +346,33 @@
                 map.addLayer(trafficJunctionMarker);
                 updateTrafficStatus("Traffic Signal icon shown.");
             }
+        });
+
+        // ESP32 Traffic Signal Controller
+        const esp32Input = document.getElementById("esp32IpInput");
+        if (esp32Input) {
+            try {
+                const savedEsp32 = localStorage.getItem("ambulanceEsp32Url");
+                if (savedEsp32) {
+                    esp32Input.value = savedEsp32;
+                    esp32BaseUrl = savedEsp32;
+                }
+            } catch (e) {}
+        }
+
+        bindClick("connectEsp32Btn", () => {
+            const value = (document.getElementById("esp32IpInput")?.value || "").trim();
+            if (!value) {
+                updateTrafficStatus("⚠️ Enter the ESP32 IP address first.");
+                return;
+            }
+
+            esp32BaseUrl = value.replace(/\/+$/, "");
+            try { localStorage.setItem("ambulanceEsp32Url", esp32BaseUrl); } catch (e) {}
+
+            const status = document.getElementById("esp32Status");
+            if (status) status.innerHTML = "🟢 ESP32 address saved. It will receive updates when the ambulance enters 750 m.";
+            updateTrafficStatus("🚦 ESP32 controller connected in the website configuration.");
         });
 
         // Modals & QR Code
@@ -749,33 +790,46 @@
         const heading = pos.coords.heading;
         const timestamp = Date.now();
 
+        // Filter GPS drift BEFORE broadcasting or updating the map.
+        const accepted = shouldAcceptGpsPosition(
+            selectedVehicleId, lat, lng, accuracy, speed
+        );
+
         const nameInput = document.getElementById("deviceDisplayNameInput");
         const typedName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : "";
         const displayName = typedName || `Ambulance ${selectedVehicleId}`;
 
-        // Update Transmitter UI Metrics
         const latEl = document.getElementById("latitude");
         const lngEl = document.getElementById("longitude");
         const accEl = document.getElementById("accuracy");
         const spdEl = document.getElementById("speed");
         const updEl = document.getElementById("lastUpdate");
 
+        // Always show the raw GPS quality so you can diagnose the phone.
         if (latEl) latEl.innerText = lat.toFixed(6);
         if (lngEl) lngEl.innerText = lng.toFixed(6);
-        if (accEl) accEl.innerText = accuracy !== null ? `${accuracy.toFixed(1)} m` : "Unavailable";
-        if (spdEl) spdEl.innerText = speed !== null ? `${(speed * 3.6).toFixed(1)} km/h` : "0.0 km/h";
+        if (accEl) accEl.innerText = Number.isFinite(Number(accuracy))
+            ? `${Number(accuracy).toFixed(1)} m` : "Unavailable";
+        if (spdEl) spdEl.innerText = Number.isFinite(Number(speed))
+            ? `${(Number(speed) * 3.6).toFixed(1)} km/h` : "0.0 km/h";
+
+        if (!accepted) {
+            updateAmbulanceStatus("🟡 GPS stable — ignoring small GPS drift");
+            return;
+        }
+
         if (updEl) updEl.innerText = new Date(timestamp).toLocaleTimeString();
 
         const telemetryPayload = {
             vehicleId: selectedVehicleId,
-            displayName: displayName,
+            displayName,
             deviceName: detectDeviceName(),
             latitude: lat,
             longitude: lng,
             accuracy: accuracy,
             speed: speed,
             heading: heading,
-            timestamp: timestamp
+            timestamp
         };
 
         activeVehiclesData[selectedVehicleId] = telemetryPayload;
@@ -1023,14 +1077,108 @@
     // ====================================================================
     // MAP MARKERS & OSRM DRIVING ROUTE
     // ====================================================================
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function shouldAcceptGpsPosition(vehicleId, lat, lng, accuracy, speed) {
+        const accuracyM = Number(accuracy);
+        const speedKmh = Number.isFinite(Number(speed)) && Number(speed) >= 0
+            ? Number(speed) * 3.6
+            : 0;
+
+        // Bad accuracy readings are much more likely to create "jumping".
+        if (Number.isFinite(accuracyM) && accuracyM > MIN_GPS_ACCURACY_M) {
+            return false;
+        }
+
+        const state = gpsStateMap[vehicleId];
+
+        if (!state) {
+            gpsStateMap[vehicleId] = {
+                lat, lng,
+                lastAcceptedAt: Date.now(),
+                stationarySince: speedKmh <= STATIONARY_SPEED_KMH ? Date.now() : null
+            };
+            return true;
+        }
+
+        const movedM = haversineMeters(state.lat, state.lng, lat, lng);
+        const elapsedS = Math.max(0.5, (Date.now() - state.lastAcceptedAt) / 1000);
+
+        // Reject a single implausibly large jump (common GPS reacquisition error).
+        const impliedKmh = (movedM / elapsedS) * 3.6;
+        if (movedM > MAX_REASONABLE_JUMP_M && impliedKmh > 100) {
+            return false;
+        }
+
+        // If both reported speed and displacement indicate the phone is stationary,
+        // keep the old coordinate. This prevents GPS jitter from moving the marker.
+        if (movedM < MIN_MOVEMENT_M && speedKmh <= STATIONARY_SPEED_KMH) {
+            return false;
+        }
+
+        // When speed is near zero, require a larger displacement before moving.
+        if (speedKmh <= STATIONARY_SPEED_KMH && movedM < Math.max(MIN_MOVEMENT_M, accuracyM || 0)) {
+            return false;
+        }
+
+        state.lat = lat;
+        state.lng = lng;
+        state.lastAcceptedAt = Date.now();
+        return true;
+    }
+
+    function animateMarkerTo(marker, targetLatLng, duration = MARKER_ANIMATION_MS) {
+        if (!marker) return;
+
+        const from = marker.getLatLng();
+        const start = performance.now();
+
+        if (marker._animationFrame) cancelAnimationFrame(marker._animationFrame);
+
+        function frame(now) {
+            const progress = Math.min(1, (now - start) / duration);
+            const eased = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+            const lat = from.lat + (targetLatLng[0] - from.lat) * eased;
+            const lng = from.lng + (targetLatLng[1] - from.lng) * eased;
+            marker.setLatLng([lat, lng]);
+
+            if (progress < 1) {
+                marker._animationFrame = requestAnimationFrame(frame);
+            }
+        }
+
+        marker._animationFrame = requestAnimationFrame(frame);
+    }
+
     function updateVehicleMarkerOnMap(vehicleId, data) {
         if (!map || typeof L === "undefined") return;
 
         const lat = Number(data.latitude);
         const lng = Number(data.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
         const pos = [lat, lng];
 
-        const iconHtml = `<div style="background:#dc2626; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(0,0,0,0.4); border:2px solid white;">🚑</div>`;
+        const iconHtml = `
+            <div class="ambulance-map-marker"
+                 style="background:#dc2626;color:white;width:34px;height:34px;border-radius:50%;
+                 display:flex;align-items:center;justify-content:center;font-size:18px;
+                 box-shadow:0 3px 8px rgba(0,0,0,.4);border:2px solid white;">
+                🚑
+            </div>`;
+
         const ambulanceIcon = L.divIcon({
             className: "custom-amb-icon",
             html: iconHtml,
@@ -1039,36 +1187,48 @@
         });
 
         const popup = `
-            <div style="font-family: inherit; font-size: 13px;">
-                <b style="color: #c62828;">🚑 ${data.displayName || vehicleId}</b><br>
+            <div style="font-family:inherit;font-size:13px;">
+                <b style="color:#c62828;">🚑 ${data.displayName || vehicleId}</b><br>
                 <b>ID:</b> ${vehicleId}<br>
                 <b>Lat:</b> ${lat.toFixed(6)} | <b>Lng:</b> ${lng.toFixed(6)}<br>
+                <b>Accuracy:</b> ${Number.isFinite(Number(data.accuracy)) ? Number(data.accuracy).toFixed(1) + " m" : "--"}<br>
                 <b>Updated:</b> ${new Date(data.timestamp || Date.now()).toLocaleTimeString()}
-            </div>
-        `;
+            </div>`;
 
         if (!markersMap[vehicleId]) {
             markersMap[vehicleId] = L.marker(pos, { icon: ambulanceIcon }).addTo(map).bindPopup(popup);
         } else {
-            markersMap[vehicleId].setLatLng(pos);
+            animateMarkerTo(markersMap[vehicleId], pos);
             markersMap[vehicleId].getPopup().setContent(popup);
         }
 
-        // Breadcrumb Trail
-        if (!vehicleHistoryMap[vehicleId]) vehicleHistoryMap[vehicleId] = [];
-        const history = vehicleHistoryMap[vehicleId];
-        history.push(pos);
-        if (history.length > 250) history.shift();
+        // IMPORTANT: Do not draw raw GPS breadcrumbs. The road route is drawn separately
+        // by OSRM, which prevents the old "messy thread" effect.
+    }
 
-        if (!vehicleTrailsMap[vehicleId]) {
-            vehicleTrailsMap[vehicleId] = L.polyline(history, {
-                color: "#dc2626",
-                weight: 3,
-                opacity: 0.7,
-                dashArray: "4, 6"
-            }).addTo(map);
-        } else {
-            vehicleTrailsMap[vehicleId].setLatLngs(history);
+    function formatEtaSeconds(seconds) {
+        const s = Math.max(0, Math.round(Number(seconds) || 0));
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return m > 0 ? `${m}m ${String(r).padStart(2, "0")}s` : `${r}s`;
+    }
+
+    async function updateEsp32Signal(distanceM, etaSeconds) {
+        if (!esp32BaseUrl) return;
+        if (!Number.isFinite(distanceM) || !Number.isFinite(etaSeconds)) return;
+        if (distanceM > APPROACH_DISTANCE_M) return;
+        if (Date.now() - lastEsp32Update < ESP32_UPDATE_INTERVAL) return;
+
+        lastEsp32Update = Date.now();
+
+        const base = esp32BaseUrl.replace(/\/+$/, "");
+        const url = `${base}/traffic/update?distance=${encodeURIComponent(Math.round(distanceM))}&eta=${encodeURIComponent(Math.round(etaSeconds))}`;
+
+        try {
+            await fetch(url, { method: "GET", mode: "cors" });
+            console.log("🚦 ESP32 updated:", Math.round(distanceM), "m /", Math.round(etaSeconds), "s");
+        } catch (err) {
+            console.warn("ESP32 update failed:", err);
         }
     }
 
@@ -1111,7 +1271,7 @@
         if (!amb) return;
 
         const now = Date.now();
-        if (now - lastRoutingTime < 1000) return;
+        if (now - lastRoutingTime < 2000) return;
         lastRoutingTime = now;
 
         const ambCoords = [Number(amb.latitude), Number(amb.longitude)];
@@ -1141,6 +1301,17 @@
                 }
 
                 updateRouteTelemetryUI(distKm, durationMins);
+
+                // Send the physical controller the real road distance and ETA.
+                updateEsp32Signal(route.distance, route.duration);
+
+                // Expose precise values for other UI functions.
+                window.__ambulanceRouteTelemetry = {
+                    distanceM: route.distance,
+                    distanceKm: route.distance / 1000,
+                    etaSeconds: route.duration,
+                    etaMinutes: route.duration / 60
+                };
 
                 if (autoCenterEnabled && map) {
                     const bounds = L.latLngBounds([trafficCoords, ambCoords]);
