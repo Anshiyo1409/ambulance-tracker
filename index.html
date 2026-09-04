@@ -144,11 +144,14 @@
                 <button id="stopTrackingBtn" class="btn-action btn-danger" disabled>
                     ⏹️ Stop Tracking
                 </button>
-                <button id="sendTestPingBtn" class="btn-action btn-secondary" title="Sends an instant test packet to laptop">
-                    ⚡ Send Test Ping
-                </button>
                 <button id="simulateBtn" class="btn-action btn-accent">
-                    🚗 Simulate Movement
+                    🚗 Start Smooth Simulation
+                </button>
+                <button id="jump700Btn" class="btn-action btn-secondary" title="Instantly places ambulance 700m away to trigger ESP32 preemption">
+                    ⚡ Jump to 700m (Trigger Zone)
+                </button>
+                <button id="fastSimBtn" class="btn-action btn-outline" title="Toggle simulation speed">
+                    ⏩ 2.5x Speed
                 </button>
             </div>
 
@@ -229,6 +232,21 @@
                 </div>
                 <small id="esp32Status" style="display:block;margin-top:8px;">
                     Enter the ESP32 IP address shown in Arduino Serial Monitor.
+                </small>
+            </div>
+
+            <!-- ESP32 SIMULATION / RAPID TEST BAR -->
+            <div class="junction-box" style="margin-top:12px; background: #f8fafc; border-left: 4px solid var(--accent);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
+                    <label><strong>🎮 Simulation & ESP32 Preemption Test:</strong></label>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button id="trafficSimulateBtn" class="btn-xs btn-accent">🚗 Start Smooth Simulation</button>
+                        <button id="trafficJump700Btn" class="btn-xs btn-primary" title="Instantly places simulated ambulance at 700m approach threshold">⚡ Jump to 700m (Trigger Zone)</button>
+                        <button id="trafficFastSimBtn" class="btn-xs btn-outline">⏩ 2.5x Speed</button>
+                    </div>
+                </div>
+                <small style="color: var(--text-muted); display: block;">
+                    Simulates smooth ambulance travel along real road paths to trigger ESP32 preemption (&le; 750m: RED 20s &rarr; YELLOW 15s &rarr; GREEN).
                 </small>
             </div>
 
