@@ -98,7 +98,7 @@
         const roomParam = urlParams.get("room");
         if (roomParam && roomParam.trim()) {
             currentRoomId = roomParam.trim().toUpperCase();
-            try { localStorage.setItem("ambulanceTrackerRoom", currentRoomId); } catch (e) {}
+            try { localStorage.setItem("ambulanceTrackerRoom", currentRoomId); } catch (e) { }
         } else {
             try {
                 const savedRoom = localStorage.getItem("ambulanceTrackerRoom");
@@ -135,9 +135,9 @@
     }
 
     function checkGeolocationSecurity() {
-        const isSecure = window.isSecureContext || 
-                         window.location.hostname === "localhost" || 
-                         window.location.hostname === "127.0.0.1";
+        const isSecure = window.isSecureContext ||
+            window.location.hostname === "localhost" ||
+            window.location.hostname === "127.0.0.1";
         const alertBox = document.getElementById("insecureOriginAlert");
 
         if (!isSecure && window.location.protocol === "http:" && alertBox) {
@@ -315,10 +315,10 @@
             try {
                 const saved = localStorage.getItem("ambulanceDisplayName");
                 if (saved) nameInput.value = saved;
-            } catch (e) {}
+            } catch (e) { }
 
             nameInput.addEventListener("input", (e) => {
-                try { localStorage.setItem("ambulanceDisplayName", e.target.value.trim()); } catch (err) {}
+                try { localStorage.setItem("ambulanceDisplayName", e.target.value.trim()); } catch (err) { }
             });
         }
 
@@ -376,7 +376,7 @@
                     esp32Input.value = savedEsp32;
                     esp32BaseUrl = savedEsp32;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         bindClick("connectEsp32Btn", async () => {
@@ -392,7 +392,7 @@
                 const input = document.getElementById("esp32IpInput");
                 if (input) input.value = esp32BaseUrl;
             }
-            try { localStorage.setItem("ambulanceEsp32Url", esp32BaseUrl); } catch (e) {}
+            try { localStorage.setItem("ambulanceEsp32Url", esp32BaseUrl); } catch (e) { }
 
             const status = document.getElementById("esp32Status");
             if (status) status.innerHTML = `⏳ Connecting to ${esp32BaseUrl}...`;
@@ -472,7 +472,7 @@
             const val = input.value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
             if (val) {
                 currentRoomId = val;
-                try { localStorage.setItem("ambulanceTrackerRoom", currentRoomId); } catch (e) {}
+                try { localStorage.setItem("ambulanceTrackerRoom", currentRoomId); } catch (e) { }
                 initializeRoomSystem();
                 generatePairingQrCode();
                 setupSyncTransports();
@@ -566,7 +566,7 @@
 
         try {
             if (mqttClient) {
-                try { mqttClient.end(true); } catch (e) {}
+                try { mqttClient.end(true); } catch (e) { }
             }
 
             mqttClient = mqtt.connect(brokerUrl, {
@@ -612,7 +612,7 @@
 
             try {
                 if (localWs) {
-                    try { localWs.close(); } catch (e) {}
+                    try { localWs.close(); } catch (e) { }
                 }
 
                 localWs = new WebSocket(wsUrl);
@@ -633,8 +633,8 @@
                     }
                 };
 
-                localWs.onerror = () => {};
-            } catch (e) {}
+                localWs.onerror = () => { };
+            } catch (e) { }
         }
     }
 
@@ -646,7 +646,7 @@
             const receiverPeerId = `amb-traffic-${currentRoomId.toLowerCase().replace(/[^a-z0-9]/g, "")}`;
 
             if (currentMode === "traffic") {
-                if (peer) try { peer.destroy(); } catch (e) {}
+                if (peer) try { peer.destroy(); } catch (e) { }
                 peer = new Peer(receiverPeerId);
 
                 peer.on("open", (id) => {
@@ -659,10 +659,10 @@
                     });
                 });
 
-                peer.on("error", () => {});
+                peer.on("error", () => { });
 
             } else if (currentMode === "ambulance") {
-                if (peer) try { peer.destroy(); } catch (e) {}
+                if (peer) try { peer.destroy(); } catch (e) { }
                 peer = new Peer();
 
                 peer.on("open", () => {
@@ -671,11 +671,11 @@
                         conn.on("open", () => {
                             activePeerConnections[receiverPeerId] = conn;
                         });
-                        conn.on("error", () => {});
-                    } catch (e) {}
+                        conn.on("error", () => { });
+                    } catch (e) { }
                 });
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     // Broadcast across all active transports
@@ -1403,8 +1403,8 @@
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
         const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distKm = (R * c * 1.25).toFixed(2);
         const etaMins = Math.max(1, Math.round(distKm * 2.0));
@@ -1559,39 +1559,23 @@
         return m > 0 ? `${m}m ${String(r).padStart(2, "0")}s` : `${r}s`;
     }
 
-    async function updateEsp32Signal(distanceM, etaSeconds, force = false) {
+    async function updateEsp32Signal(distanceM, etaSeconds) {
         if (!esp32BaseUrl) return;
         if (!Number.isFinite(distanceM) || !Number.isFinite(etaSeconds)) return;
+        if (distanceM > APPROACH_DISTANCE_M) return;
 
-        const now = Date.now();
-        if (!force && now - lastEsp32Update < ESP32_UPDATE_INTERVAL) return;
+        if (Date.now() - lastEsp32Update < ESP32_UPDATE_INTERVAL) return;
 
-        lastEsp32Update = now;
+        lastEsp32Update = Date.now();
 
         const base = esp32BaseUrl.replace(/\/+$/, "");
         const url = `${base}/traffic/update?distance=${encodeURIComponent(Math.round(distanceM))}&eta=${encodeURIComponent(Math.round(etaSeconds))}`;
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2000);
-            await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
-            clearTimeout(timeoutId);
+            await fetch(url, { method: "GET", mode: "cors" });
             console.log("🚦 ESP32 updated:", Math.round(distanceM), "m /", Math.round(etaSeconds), "s");
-
-            const espStatus = document.getElementById("esp32Status");
-            if (espStatus) {
-                if (distanceM <= APPROACH_DISTANCE_M) {
-                    espStatus.innerHTML = `🟢 <strong style="color:#15803d;">ESP32 ACTIVE</strong>: Approaching (${Math.round(distanceM)}m, ETA: ${Math.round(etaSeconds)}s) - LCD & Preemption ON`;
-                } else {
-                    espStatus.innerHTML = `🟢 <strong>ESP32 Standby</strong>: Ambulance is ${Math.round(distanceM)}m away (outside 750m zone)`;
-                }
-            }
         } catch (err) {
-            console.warn("ESP32 update notice:", err.message || err);
-            const espStatus = document.getElementById("esp32Status");
-            if (espStatus && !espStatus.innerText.includes("Offline")) {
-                espStatus.innerHTML = `🟡 <strong>ESP32 Sent</strong>: Packet sent to ${base} (Verify ESP32 is powered on & on same Wi-Fi)`;
-            }
+            console.warn("ESP32 update failed:", err);
         }
     }
 
@@ -1603,7 +1587,7 @@
             console.log("🚦 ESP32 reset to idle/red");
             const espStatus = document.getElementById("esp32Status");
             if (espStatus) espStatus.innerHTML = "🟢 ESP32 connected and in Standby mode.";
-        } catch (e) {}
+        } catch (e) { }
     }
 
     function updateTrafficJunctionMarker() {
